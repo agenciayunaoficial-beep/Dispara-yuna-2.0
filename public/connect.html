@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Conectar WhatsApp</title>
+<script src="/socket.io/socket.io.js"></script>
+<style>
+  :root{--bg:#0f1b17;--card:#17261f;--line:#25392f;--txt:#eaf4ee;--mut:#93aa9c;--acc:#25d366;--accd:#0b3d20;--err:#ff7a7a}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:radial-gradient(1200px 600px at 50% -10%,#1b3a2b 0,var(--bg) 60%);color:var(--txt);font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;display:grid;place-items:center;padding:16px}
+  .card{width:100%;max-width:440px;background:var(--card);border:1px solid var(--line);border-radius:20px;padding:28px 22px;text-align:center;box-shadow:0 20px 60px #0006}
+  .brand{font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--mut);margin-bottom:6px}
+  h1{font-size:22px;margin:4px 0 6px}
+  p{color:var(--mut);margin:6px 0 16px}
+  .tabs{display:flex;gap:6px;background:#0f1b17;border-radius:12px;padding:4px;margin:14px 0}
+  .tabs button{flex:1;border:0;background:none;color:var(--mut);padding:10px;border-radius:9px;font-size:15px;cursor:pointer}
+  .tabs button.on{background:var(--line);color:var(--txt)}
+  .btn{display:inline-block;width:100%;border:0;border-radius:12px;background:var(--acc);color:#04210f;font-weight:700;font-size:16px;padding:14px;cursor:pointer}
+  .btn:disabled{opacity:.5;cursor:wait}
+  input{width:100%;padding:13px;border-radius:12px;border:1px solid var(--line);background:#0f1b17;color:var(--txt);font-size:16px;margin-bottom:12px}
+  .qr{background:#fff;border-radius:16px;padding:10px;display:inline-block;margin:6px 0}
+  .qr img{display:block;width:260px;height:260px;max-width:100%}
+  .code{font:700 34px/1.2 ui-monospace,Menlo,monospace;letter-spacing:.18em;background:#0f1b17;border:1px dashed var(--acc);border-radius:14px;padding:18px 8px;margin:10px 0;color:var(--acc);user-select:all}
+  ol{text-align:left;color:var(--mut);padding-left:20px;margin:14px 0 0;font-size:14px}
+  .err{color:var(--err);font-size:14px;margin:8px 0}
+  .ok{font-size:54px}
+  .hide{display:none}
+  .spin{width:34px;height:34px;border:4px solid var(--line);border-top-color:var(--acc);border-radius:50%;animation:s 1s linear infinite;margin:18px auto}
+  @keyframes s{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="brand">Agência Yuna</div>
+  <h1 id="title">Conectar WhatsApp</h1>
+  <p id="sub">Carregando…</p>
+
+  <div id="viewStart" class="hide">
+    <div class="tabs">
+      <button id="tabQr" class="on">QR Code</button>
+      <button id="tabCode">Código</button>
+    </div>
+    <div id="paneCode" class="hide">
+      <input id="phone" inputmode="numeric" placeholder="Seu WhatsApp com DDD (ex.: 82999999999)">
+    </div>
+    <button class="btn" id="go">Gerar QR Code</button>
+    <div class="err" id="err"></div>
+  </div>
+
+  <div id="viewWait" class="hide"><div class="spin"></div></div>
+
+  <div id="viewQr" class="hide">
+    <div class="qr"><img id="qrImg" alt="QR Code"></div>
+    <ol>
+      <li>Abra o <b>WhatsApp</b> no celular</li>
+      <li>Toque em <b>Aparelhos conectados</b> (menu ⋮ ou Configurações)</li>
+      <li>Toque em <b>Conectar um aparelho</b> e aponte a câmera para este QR Code</li>
+    </ol>
+  </div>
+
+  <div id="viewCode" class="hide">
+    <div class="code" id="codeBox">----</div>
+    <ol>
+      <li>Abra o <b>WhatsApp</b> no celular — vai chegar uma notificação</li>
+      <li>Vá em <b>Aparelhos conectados → Conectar um aparelho</b></li>
+      <li>Toque em <b>Conectar com número de telefone</b> e digite o código acima</li>
+    </ol>
+  </div>
+
+  <div id="viewOk" class="hide"><div class="ok">✅</div></div>
+</div>
+
+<script>
+const token = location.pathname.split('/').pop();
+const $ = (id) => document.getElementById(id);
+let mode = 'qr', current = null;
+
+const views = ['viewStart','viewWait','viewQr','viewCode','viewOk'];
+function show(v){ views.forEach(x => $(x).classList.toggle('hide', x !== v)); }
+
+$('tabQr').onclick = () => setMode('qr');
+$('tabCode').onclick = () => setMode('code');
+function setMode(m){
+  mode = m;
+  $('tabQr').classList.toggle('on', m === 'qr');
+  $('tabCode').classList.toggle('on', m === 'code');
+  $('paneCode').classList.toggle('hide', m !== 'code');
+  $('go').textContent = m === 'qr' ? 'Gerar QR Code' : 'Gerar código';
+}
+$('go').onclick = async () => {
+  $('err').textContent = '';
+  $('go').disabled = true;
+  let phone = $('phone').value.replace(/\D/g,'');
+  if (mode === 'code' && (phone.length === 10 || phone.length === 11)) phone = '55' + phone;
+  try {
+    const r = await fetch(`/api/public/${token}/start`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({mode, phone})});
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || 'Erro');
+    show('viewWait'); $('sub').textContent = 'Preparando a conexão… (pode levar até 30 segundos)';
+  } catch (e) { $('err').textContent = e.message; }
+  $('go').disabled = false;
+};
+
+function render(s){
+  current = s;
+  switch (s.status) {
+    case 'ready':
+      $('title').textContent = 'WhatsApp conectado!';
+      $('sub').textContent = 'Tudo certo. Já pode fechar esta página.';
+      show('viewOk'); break;
+    case 'qr':
+      $('title').textContent = 'Escaneie o QR Code';
+      $('sub').textContent = 'O código se renova sozinho a cada poucos segundos.';
+      $('qrImg').src = s.qr; show('viewQr'); break;
+    case 'code':
+      $('title').textContent = 'Digite este código no WhatsApp';
+      $('sub').textContent = 'Válido por poucos minutos.';
+      $('codeBox').textContent = s.code; show('viewCode'); break;
+    case 'authenticated':
+      $('title').textContent = 'Conectando…';
+      $('sub').textContent = 'Quase lá, só mais um instante.'; show('viewWait'); break;
+    case 'starting':
+      $('title').textContent = 'Conectar WhatsApp';
+      $('sub').textContent = 'Preparando a conexão… (pode levar até 30 segundos)'; show('viewWait'); break;
+    default:
+      $('title').textContent = 'Conectar WhatsApp';
+      $('sub').textContent = s.name ? `Conexão de ${s.name}. Escolha como conectar:` : 'Escolha como conectar:';
+      $('err').textContent = s.error || '';
+      show('viewStart');
+  }
+}
+
+fetch(`/api/public/${token}`).then(r => r.ok ? r.json() : Promise.reject()).then(render).catch(() => {
+  $('title').textContent = 'Link inválido'; $('sub').textContent = 'Peça um novo link para quem enviou este.';
+});
+io({auth:{connectToken: token}}).on('session', render);
+</script>
+</body>
+</html>

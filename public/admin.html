@@ -1,0 +1,372 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dispara Yuna</title>
+<script src="/socket.io/socket.io.js"></script>
+<style>
+  :root{--bg:#0e1512;--panel:#16211c;--panel2:#1c2a24;--line:#27392f;--txt:#e9f3ed;--mut:#8fa699;--acc:#25d366;--warn:#f5b942;--err:#ff6b6b;--blue:#5aa9ff}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+  header{display:flex;align-items:center;gap:16px;padding:14px 20px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--bg);z-index:5;flex-wrap:wrap}
+  .logo{font-weight:800;letter-spacing:.02em}.logo b{color:var(--acc)}
+  nav{display:flex;gap:6px;flex:1;flex-wrap:wrap}
+  nav button{background:none;border:0;color:var(--mut);padding:8px 14px;border-radius:10px;cursor:pointer;font-size:15px}
+  nav button.on{background:var(--panel2);color:var(--txt)}
+  main{max-width:1000px;margin:0 auto;padding:20px}
+  h2{margin:0 0 14px;font-size:20px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px;margin-bottom:14px}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  .grow{flex:1;min-width:180px}
+  label{display:block;font-size:13px;color:var(--mut);margin:12px 0 5px}
+  input,select,textarea{width:100%;padding:11px 12px;border-radius:10px;border:1px solid var(--line);background:#0e1512;color:var(--txt);font:inherit}
+  textarea{min-height:130px;resize:vertical}
+  button.b{border:0;border-radius:10px;padding:10px 14px;font:inherit;font-weight:600;cursor:pointer;background:var(--panel2);color:var(--txt);border:1px solid var(--line)}
+  button.b:hover{border-color:#3a5546}
+  button.pri{background:var(--acc);color:#05220f;border-color:var(--acc)}
+  button.dng{color:var(--err)}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  .pill{display:inline-block;padding:3px 10px;border-radius:99px;font-size:12px;font-weight:700;background:var(--panel2);color:var(--mut)}
+  .pill.ok{background:#12391f;color:var(--acc)}.pill.warn{background:#3b2f10;color:var(--warn)}.pill.err{background:#3d1717;color:var(--err)}.pill.blue{background:#12304f;color:var(--blue)}
+  .mut{color:var(--mut)}.small{font-size:13px}
+  .bar{height:8px;background:#0e1512;border-radius:9px;overflow:hidden;margin:8px 0}
+  .bar>i{display:block;height:100%;background:var(--acc)}
+  .hide{display:none!important}
+  .qrbox{background:#fff;padding:8px;border-radius:12px;display:inline-block}
+  .qrbox img{width:200px;height:200px;display:block}
+  .code{font:700 26px ui-monospace,Menlo,monospace;letter-spacing:.16em;color:var(--acc)}
+  .contacts{max-height:260px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:6px;margin-top:8px}
+  .contacts label{display:flex;gap:8px;align-items:center;margin:0;padding:5px 6px;color:var(--txt);font-size:14px;cursor:pointer}
+  .contacts input{width:auto}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  td,th{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left}
+  .modal{position:fixed;inset:0;background:#000a;display:grid;place-items:center;padding:16px;z-index:10}
+  .modal>div{background:var(--panel);border:1px solid var(--line);border-radius:16px;max-width:760px;width:100%;max-height:88vh;overflow:auto;padding:18px}
+  #toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#000d;border:1px solid var(--line);padding:10px 16px;border-radius:12px;z-index:20}
+  .login{max-width:360px;margin:15vh auto;text-align:center}
+  .tip{background:#102a1a;border:1px solid #1c4a2c;border-radius:10px;padding:10px 12px;color:#bfe9cd;font-size:13px;margin-top:10px}
+</style>
+</head>
+<body>
+
+<div id="loginView" class="login hide">
+  <h2 class="logo">Dispara <b>Yuna</b></h2>
+  <div class="card">
+    <label style="margin-top:0">Senha do painel</label>
+    <input id="pw" type="password" autofocus>
+    <div class="small" id="loginErr" style="color:var(--err);margin:8px 0"></div>
+    <button class="b pri" style="width:100%" id="loginBtn">Entrar</button>
+  </div>
+</div>
+
+<div id="appView" class="hide">
+  <header>
+    <div class="logo">Dispara <b>Yuna</b></div>
+    <nav>
+      <button data-tab="sessions" class="on">Conexões</button>
+      <button data-tab="campaigns">Campanhas</button>
+      <button data-tab="new">+ Nova campanha</button>
+    </nav>
+    <button class="b small" id="logout">Sair</button>
+  </header>
+  <main>
+    <section id="tab-sessions">
+      <h2>Conexões de WhatsApp</h2>
+      <div class="card">
+        <div class="row">
+          <input class="grow" id="newName" placeholder="Nome do cliente (ex.: Loja da Maria)">
+          <button class="b pri" id="addSession">Criar conexão</button>
+        </div>
+        <div class="tip">Cada conexão gera um <b>link exclusivo</b>. Envie o link ao cliente: ele escolhe QR Code ou código e conecta o próprio WhatsApp. Os contatos são sincronizados automaticamente quando conectar.</div>
+      </div>
+      <div id="sessionList"></div>
+    </section>
+
+    <section id="tab-campaigns" class="hide">
+      <h2>Campanhas</h2>
+      <div id="campaignList"></div>
+    </section>
+
+    <section id="tab-new" class="hide">
+      <h2>Nova campanha</h2>
+      <form id="campForm" class="card">
+        <div class="row">
+          <div class="grow"><label style="margin-top:0">Conexão (WhatsApp que vai enviar)</label><select id="cSession" required></select></div>
+          <div class="grow"><label style="margin-top:0">Nome da campanha</label><input id="cName" placeholder="Ex.: Promoção de novembro" required></div>
+        </div>
+
+        <label>Mensagem <span class="mut">— use <b>{nome}</b> para o primeiro nome e <b>{oi|olá|e aí}</b> para variar o texto</span></label>
+        <textarea id="cText" placeholder="{Oi|Olá} {nome}, tudo bem? ..."></textarea>
+
+        <label>Foto ou vídeo (opcional)</label>
+        <input type="file" id="cMedia" accept="image/*,video/*,application/pdf">
+
+        <label>Contatos</label>
+        <div class="row">
+          <label style="margin:0;display:flex;gap:6px;align-items:center;color:var(--txt)"><input type="radio" name="rm" value="all" checked style="width:auto"> Todos os contatos sincronizados <span class="mut" id="cCount"></span></label>
+          <label style="margin:0;display:flex;gap:6px;align-items:center;color:var(--txt)"><input type="checkbox" id="cUnsaved" checked style="width:auto"> Incluir números não salvos</label>
+          <label style="margin:0;display:flex;gap:6px;align-items:center;color:var(--txt)"><input type="radio" name="rm" value="selected" style="width:auto"> Escolher contatos</label>
+        </div>
+        <div id="pickBox" class="hide">
+          <div class="row" style="margin-top:8px">
+            <input class="grow" id="cSearch" placeholder="Buscar por nome ou número">
+            <button type="button" class="b small" id="selAll">Marcar todos</button>
+            <button type="button" class="b small" id="selNone">Limpar</button>
+            <span class="mut small" id="selCount"></span>
+          </div>
+          <div class="contacts" id="cList"></div>
+        </div>
+        <label>Números extras (opcional) — um por linha, pode incluir o nome: <span class="mut">Maria 82999999999</span></label>
+        <textarea id="cExtra" style="min-height:70px"></textarea>
+
+        <label>Agendamento</label>
+        <div class="row">
+          <div class="grow"><div class="mut small">Começar no dia</div><input type="date" id="cDate"></div>
+          <div class="grow"><div class="mut small">Horário que começa</div><input type="time" id="cStart" value="09:00"></div>
+          <div class="grow"><div class="mut small">Horário que encerra</div><input type="time" id="cEnd" value="18:00"></div>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <div class="grow"><div class="mut small">Intervalo mínimo entre mensagens (seg)</div><input type="number" id="cMin" value="20" min="5"></div>
+          <div class="grow"><div class="mut small">Intervalo máximo (seg)</div><input type="number" id="cMax" value="60" min="5"></div>
+        </div>
+        <div class="tip">Dentro do horário escolhido, as mensagens saem uma a uma com intervalo aleatório. Ao chegar o horário de encerrar, o envio pausa sozinho e <b>continua no dia seguinte</b> a partir de onde parou. Fuso: <span id="tzLabel"></span>.</div>
+
+        <div class="row" style="margin-top:16px"><button class="b pri" id="cSubmit">Agendar campanha</button><span class="mut small" id="cMsg"></span></div>
+      </form>
+    </section>
+  </main>
+</div>
+
+<div id="modal" class="modal hide"><div id="modalBody"></div></div>
+<div id="toast" class="hide"></div>
+
+<script>
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let token = localStorage.getItem('dy_token') || '';
+let sessions = {}, campaigns = {}, cfg = { tz: '', today: '' };
+let socket = null;
+let pickContacts = [], picked = new Set();
+
+function toast(msg){ const t = $('#toast'); t.textContent = msg; t.classList.remove('hide'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.add('hide'), 3200); }
+
+async function api(path, opts = {}) {
+  const headers = { 'x-admin-token': token, ...(opts.headers || {}) };
+  let body = opts.body;
+  if (body && !(body instanceof FormData)) { headers['Content-Type'] = 'application/json'; body = JSON.stringify(body); }
+  const r = await fetch(path, { method: opts.method || 'GET', headers, body });
+  if (r.status === 401) { logout(); throw new Error('Sessão expirada'); }
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || 'Erro');
+  return j;
+}
+
+// ── login ──
+async function login() {
+  $('#loginErr').textContent = '';
+  try {
+    const r = await fetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: $('#pw').value }) });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error);
+    token = j.token; localStorage.setItem('dy_token', token); boot();
+  } catch (e) { $('#loginErr').textContent = e.message || 'Erro'; }
+}
+function logout() { token = ''; localStorage.removeItem('dy_token'); if (socket) socket.close(); $('#appView').classList.add('hide'); $('#loginView').classList.remove('hide'); }
+$('#loginBtn').onclick = login;
+$('#pw').onkeydown = (e) => { if (e.key === 'Enter') login(); };
+$('#logout').onclick = logout;
+
+// ── tabs ──
+$$('nav button').forEach((b) => b.onclick = () => showTab(b.dataset.tab));
+function showTab(t) {
+  $$('nav button').forEach((x) => x.classList.toggle('on', x.dataset.tab === t));
+  ['sessions', 'campaigns', 'new'].forEach((x) => $('#tab-' + x).classList.toggle('hide', x !== t));
+  if (t === 'new') prepNew();
+}
+
+// ── boot ──
+async function boot() {
+  try {
+    cfg = await api('/api/config');
+    $('#loginView').classList.add('hide'); $('#appView').classList.remove('hide');
+    $('#tzLabel').textContent = cfg.tz; $('#cDate').value = cfg.today; $('#cDate').min = cfg.today;
+    (await api('/api/sessions')).forEach((s) => sessions[s.id] = s);
+    (await api('/api/campaigns')).forEach((c) => campaigns[c.id] = c);
+    renderSessions(); renderCampaigns();
+    if (socket) socket.close();
+    socket = io({ auth: { adminToken: token } });
+    socket.on('session', (s) => { sessions[s.id] = s; renderSessions(); });
+    socket.on('session_removed', (id) => { delete sessions[id]; renderSessions(); });
+    socket.on('campaign', (c) => { campaigns[c.id] = c; renderCampaigns(); });
+    socket.on('campaign_removed', (id) => { delete campaigns[id]; renderCampaigns(); });
+  } catch (e) { $('#loginView').classList.remove('hide'); }
+}
+
+// ── conexões ──
+const STATUS = {
+  idle: ['Desconectado', ''], starting: ['Iniciando…', 'warn'], qr: ['Aguardando leitura do QR', 'warn'], code: ['Aguardando código', 'warn'],
+  authenticated: ['Autenticando…', 'warn'], ready: ['Conectado', 'ok'], disconnected: ['Desconectado', 'err'], error: ['Erro', 'err'],
+};
+function renderSessions() {
+  const list = Object.values(sessions);
+  const box = $('#sessionList');
+  if (!list.length) { box.innerHTML = '<div class="card mut">Nenhuma conexão ainda. Crie a primeira acima.</div>'; return; }
+  box.innerHTML = list.map((s) => {
+    const [label, cls] = STATUS[s.status] || [s.status, ''];
+    const link = location.origin + '/c/' + s.token;
+    const ready = s.status === 'ready';
+    return `<div class="card" data-id="${s.id}">
+      <div class="row"><b class="grow" style="font-size:17px">${esc(s.name)}</b>
+        <span class="pill ${cls}">${label}</span>${s.phone ? `<span class="pill">+${esc(s.phone)}</span>` : ''}
+        ${ready ? `<span class="pill blue">${s.syncing ? 'Sincronizando contatos…' : s.contactCount + ' contatos'}</span>` : ''}</div>
+      ${s.error ? `<div class="small" style="color:var(--err);margin-top:6px">${esc(s.error)}</div>` : ''}
+      <div class="row" style="margin-top:10px">
+        <input class="grow small" readonly value="${esc(link)}" onclick="this.select()">
+        <button class="b" data-act="copy" data-link="${esc(link)}">Copiar link do cliente</button>
+      </div>
+      ${s.status === 'qr' && s.qr ? `<div style="margin-top:10px"><div class="qrbox"><img src="${s.qr}"></div></div>` : ''}
+      ${s.status === 'code' && s.code ? `<div style="margin-top:10px" class="code">${esc(s.code)}</div>` : ''}
+      <div class="row" style="margin-top:12px">
+        ${!ready ? `<button class="b" data-act="qr">Gerar QR aqui</button><button class="b" data-act="code">Gerar código</button>` : ''}
+        ${ready ? `<button class="b" data-act="sync">Sincronizar contatos</button>` : ''}
+        ${ready || ['qr', 'code', 'authenticated', 'starting'].includes(s.status) ? `<button class="b dng" data-act="disconnect">${ready ? 'Desconectar WhatsApp' : 'Cancelar'}</button>` : ''}
+        <button class="b dng" data-act="delete">Excluir</button>
+      </div></div>`;
+  }).join('');
+}
+$('#sessionList').onclick = async (e) => {
+  const btn = e.target.closest('button[data-act]'); if (!btn) return;
+  const id = btn.closest('[data-id]')?.dataset.id; const act = btn.dataset.act;
+  try {
+    if (act === 'copy') { await navigator.clipboard.writeText(btn.dataset.link); toast('Link copiado!'); }
+    if (act === 'qr') { await api(`/api/sessions/${id}/start`, { method: 'POST', body: { mode: 'qr' } }); }
+    if (act === 'code') {
+      const phone = prompt('Número do WhatsApp com DDI e DDD (ex.: 5582999999999):'); if (!phone) return;
+      await api(`/api/sessions/${id}/start`, { method: 'POST', body: { mode: 'code', phone } });
+    }
+    if (act === 'sync') { btn.disabled = true; const r = await api(`/api/sessions/${id}/sync`, { method: 'POST' }); toast(r.count + ' contatos sincronizados'); }
+    if (act === 'disconnect') {
+      if (!confirm('Desconectar este WhatsApp? Todas as campanhas dele serão pausadas e o cliente precisará conectar de novo.')) return;
+      await api(`/api/sessions/${id}/disconnect`, { method: 'POST' }); toast('Desconectado');
+    }
+    if (act === 'delete') {
+      if (!confirm('Excluir esta conexão e todas as campanhas dela?')) return;
+      await api(`/api/sessions/${id}`, { method: 'DELETE' });
+    }
+  } catch (err) { toast(err.message); btn.disabled = false; }
+};
+$('#addSession').onclick = async () => {
+  const name = $('#newName').value.trim(); if (!name) return toast('Digite o nome do cliente');
+  try { const s = await api('/api/sessions', { method: 'POST', body: { name } }); sessions[s.id] = s; $('#newName').value = ''; renderSessions(); } catch (e) { toast(e.message); }
+};
+
+// ── campanhas ──
+const PHASE = {
+  sending: ['Enviando agora', 'ok'], outside_window: ['Aguardando horário', 'warn'], not_started: ['Agendada', 'blue'],
+  offline: ['WhatsApp desconectado', 'err'], paused: ['Pausada', 'warn'], done: ['Concluída', 'ok'],
+};
+function renderCampaigns() {
+  const list = Object.values(campaigns).sort((a, b) => b.createdAt - a.createdAt);
+  const box = $('#campaignList');
+  if (!list.length) { box.innerHTML = '<div class="card mut">Nenhuma campanha ainda.</div>'; return; }
+  box.innerHTML = list.map((c) => {
+    const [label, cls] = PHASE[c.phase] || [c.phase, ''];
+    const pct = c.total ? Math.round(((c.sent + c.failed) / c.total) * 100) : 0;
+    const sName = sessions[c.sessionId]?.name || '—';
+    return `<div class="card" data-id="${c.id}">
+      <div class="row"><b class="grow" style="font-size:17px">${esc(c.name)}</b><span class="pill ${cls}">${label}</span></div>
+      <div class="mut small">${esc(sName)} · ${c.startDate.split('-').reverse().join('/')} · ${c.windowStart}–${c.windowEnd} ${c.media ? '· 📎 mídia' : ''}</div>
+      <div class="bar"><i style="width:${pct}%"></i></div>
+      <div class="small">${c.sent} enviadas · ${c.pending} na fila · ${c.failed} falhas · ${c.total} no total</div>
+      ${c.pauseReason && c.status === 'paused' ? `<div class="small" style="color:var(--warn);margin-top:4px">${esc(c.pauseReason)}</div>` : ''}
+      <div class="row" style="margin-top:10px">
+        ${c.status === 'active' ? '<button class="b" data-act="pause">Pausar</button>' : ''}
+        ${c.status === 'paused' ? '<button class="b pri" data-act="resume">Retomar</button>' : ''}
+        <button class="b" data-act="detail">Ver detalhes</button>
+        <button class="b dng" data-act="del">Excluir</button>
+      </div></div>`;
+  }).join('');
+}
+$('#campaignList').onclick = async (e) => {
+  const btn = e.target.closest('button[data-act]'); if (!btn) return;
+  const id = btn.closest('[data-id]').dataset.id; const act = btn.dataset.act;
+  try {
+    if (act === 'pause') await api(`/api/campaigns/${id}/pause`, { method: 'POST' });
+    if (act === 'resume') await api(`/api/campaigns/${id}/resume`, { method: 'POST' });
+    if (act === 'del') { if (!confirm('Excluir esta campanha?')) return; await api(`/api/campaigns/${id}`, { method: 'DELETE' }); }
+    if (act === 'detail') openDetail(id);
+  } catch (err) { toast(err.message); }
+};
+async function openDetail(id) {
+  const c = await api(`/api/campaigns/${id}`);
+  const rows = c.recipients.slice(0, 500).map((r) => `<tr><td>${esc(r.name || '—')}</td><td>${esc(r.number || '')}</td>
+    <td>${r.status === 'sent' ? '✅ enviada' : r.status === 'failed' ? '❌ ' + esc(r.error || 'falhou') : '⏳ na fila'}</td></tr>`).join('');
+  $('#modalBody').innerHTML = `<div class="row"><h2 class="grow" style="margin:0">${esc(c.name)}</h2><button class="b" id="mClose">Fechar</button></div>
+    <div class="card small" style="white-space:pre-wrap;margin-top:12px">${esc(c.text || '(só mídia)')}</div>
+    <div class="row" style="margin-bottom:10px">${c.failed ? '<button class="b" id="mRetry">Reenviar as que falharam</button>' : ''}</div>
+    <table><tr><th>Nome</th><th>Número</th><th>Status</th></tr>${rows}</table>
+    ${c.recipients.length > 500 ? `<div class="mut small" style="margin-top:8px">Mostrando 500 de ${c.recipients.length}.</div>` : ''}`;
+  $('#modal').classList.remove('hide');
+  $('#mClose').onclick = () => $('#modal').classList.add('hide');
+  const rt = $('#mRetry'); if (rt) rt.onclick = async () => { await api(`/api/campaigns/${id}/retry-failed`, { method: 'POST' }); $('#modal').classList.add('hide'); toast('Falhas voltaram para a fila'); };
+}
+$('#modal').onclick = (e) => { if (e.target.id === 'modal') $('#modal').classList.add('hide'); };
+
+// ── nova campanha ──
+function prepNew() {
+  const sel = $('#cSession'); const cur = sel.value;
+  sel.innerHTML = Object.values(sessions).map((s) => `<option value="${s.id}">${esc(s.name)}${s.status === 'ready' ? '' : ' (desconectado)'}</option>`).join('');
+  if (cur) sel.value = cur;
+  loadContacts();
+}
+$('#cSession').onchange = loadContacts;
+async function loadContacts() {
+  const id = $('#cSession').value; if (!id) return;
+  try { pickContacts = await api(`/api/sessions/${id}/contacts`); } catch { pickContacts = []; }
+  picked = new Set(); $('#cCount').textContent = `(${pickContacts.length}, sendo ${pickContacts.filter((c) => c.saved === false).length} não salvos)`; renderPick();
+}
+function renderPick() {
+  const q = $('#cSearch').value.trim().toLowerCase();
+  const view = pickContacts.filter((c) => !q || (c.name || '').toLowerCase().includes(q) || c.number.includes(q)).slice(0, 400);
+  $('#cList').innerHTML = view.map((c) => `<label><input type="checkbox" value="${esc(c.id)}" ${picked.has(c.id) ? 'checked' : ''}> ${esc(c.name || '(sem nome)')} <span class="mut small">${esc(c.number)}${c.saved === false ? ' · não salvo' : ''}</span></label>`).join('')
+    || '<div class="mut small" style="padding:8px">Nenhum contato. Conecte o WhatsApp e sincronize.</div>';
+  $('#selCount').textContent = picked.size + ' selecionados';
+}
+$('#cList').onchange = (e) => { if (e.target.type === 'checkbox') { e.target.checked ? picked.add(e.target.value) : picked.delete(e.target.value); $('#selCount').textContent = picked.size + ' selecionados'; } };
+$('#cSearch').oninput = renderPick;
+$('#selAll').onclick = () => { const q = $('#cSearch').value.trim().toLowerCase(); pickContacts.filter((c) => !q || (c.name || '').toLowerCase().includes(q) || c.number.includes(q)).forEach((c) => picked.add(c.id)); renderPick(); };
+$('#selNone').onclick = () => { picked.clear(); renderPick(); };
+$$('input[name=rm]').forEach((r) => r.onchange = () => $('#pickBox').classList.toggle('hide', $('input[name=rm]:checked').value !== 'selected'));
+
+$('#campForm').onsubmit = async (e) => {
+  e.preventDefault();
+  const fd = new FormData();
+  fd.append('sessionId', $('#cSession').value);
+  fd.append('name', $('#cName').value);
+  fd.append('text', $('#cText').value);
+  fd.append('includeUnsaved', $('#cUnsaved').checked ? '1' : '0');
+  fd.append('recipientsMode', $('input[name=rm]:checked').value);
+  fd.append('contactIds', JSON.stringify([...picked]));
+  fd.append('extraNumbers', $('#cExtra').value);
+  fd.append('startDate', $('#cDate').value);
+  fd.append('windowStart', $('#cStart').value);
+  fd.append('windowEnd', $('#cEnd').value);
+  fd.append('minDelay', $('#cMin').value);
+  fd.append('maxDelay', $('#cMax').value);
+  if ($('#cMedia').files[0]) fd.append('media', $('#cMedia').files[0]);
+  $('#cSubmit').disabled = true; $('#cMsg').textContent = 'Enviando…';
+  try {
+    const c = await api('/api/campaigns', { method: 'POST', body: fd });
+    campaigns[c.id] = c; renderCampaigns();
+    $('#campForm').reset(); $('#cDate').value = cfg.today; picked.clear(); $('#pickBox').classList.add('hide'); $('#cMsg').textContent = '';
+    toast('Campanha agendada!'); showTab('campaigns');
+  } catch (err) { $('#cMsg').textContent = err.message; }
+  $('#cSubmit').disabled = false;
+};
+
+if (token) boot(); else $('#loginView').classList.remove('hide');
+</script>
+</body>
+</html>
