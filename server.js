@@ -243,17 +243,49 @@ async function syncContacts(id) {
     // 1) contatos salvos na agenda
     for (const c of all) { if (!c.isGroup && !c.isMe && c.isMyContact) push(c, true); }
     // 2) números NÃO salvos: quem já conversou com esse WhatsApp (conversas individuais)
+    let unsavedOk = false;
     try {
-      const chats = await r.client.getChats();
-      for (const ch of chats) {
-        if (ch.isGroup) continue;
-        let c = null;
-        try { c = await ch.getContact(); } catch {}
-        if (!c || c.isMe) continue;
-        if (!c.id) c = { ...c, id: ch.id };
-        push(c, !!c.isMyContact);
+      // leitura direta das conversas individuais (não depende de grupos, que às vezes quebram o getChats)
+      const rows = await r.client.pupPage.evaluate(() => {
+        const C = window.require('WAWebCollections');
+        const out = [];
+        for (const chat of C.Chat.getModelsArray()) {
+          try {
+            const cid = chat.id; if (!cid) continue;
+            if (cid.server !== 'c.us' && cid.server !== 'lid') continue;
+            const ct = (C.Contact && C.Contact.get(cid)) || chat.contact || null;
+            out.push({
+              id: cid._serialized, server: cid.server, user: cid.user,
+              name: (ct && (ct.name || ct.shortName)) || '',
+              pushname: (ct && ct.pushname) || chat.formattedTitle || chat.name || '',
+              isMyContact: !!(ct && ct.isMyContact),
+              phone: (ct && ct.phoneNumber && ct.phoneNumber.user) || '',
+            });
+          } catch (e) {}
+        }
+        return out;
+      });
+      const names = new Set(list.map((x) => (x.name || '').toLowerCase()).filter(Boolean));
+      for (const x of rows) {
+        const number = x.phone || (x.server === 'c.us' ? x.user : '');
+        if (!number && names.has((x.name || x.pushname || '').toLowerCase())) continue; // mesma pessoa já salva (ID interno)
+        push({ id: { server: x.server, user: x.user, _serialized: x.id }, number, name: x.name, pushname: x.pushname }, !!x.isMyContact);
       }
-    } catch (e) { console.error('getChats', e.message); }
+      unsavedOk = true;
+    } catch (e) { console.error('chats (leitura direta)', e.stack || e.message); }
+    if (!unsavedOk) {
+      try {
+        const chats = await r.client.getChats();
+        for (const ch of chats) {
+          if (ch.isGroup) continue;
+          let c = null;
+          try { c = await ch.getContact(); } catch {}
+          if (!c || c.isMe) continue;
+          if (!c.id) c = { ...c, id: ch.id };
+          push(c, !!c.isMyContact);
+        }
+      } catch (e) { console.error('getChats', e.stack || e.message); }
+    }
     list.sort((a, b) => (a.name || a.number).localeCompare(b.name || b.number, 'pt-BR'));
     writeJsonAtomic(contactsFile(id), list);
     return list.length;
@@ -408,7 +440,12 @@ app.delete('/api/sessions/:id', requireAdmin, async (req, res) => {
   const id = req.params.id;
   if (!db.sessions[id]) return res.status(404).json({ error: 'Não encontrada' });
   await disconnectSession(id);
-  for (const c of Object.values(db.campaigns)) if (c.sessionId === id) delete db.campaigns[c.id];
+  for (const c of Object.values(db.campaigns)) {
+    if (c.sessionId !== id) continue;
+    if (c.media) { try { fs.rmSync(path.join(UPLOADS_DIR, c.media.file), { force: true }); } catch {} }
+    delete db.campaigns[c.id];
+    io.to('admin').emit('campaign_removed', c.id); // some da tela também
+  }
   delete db.sessions[id]; rt.delete(id);
   try { fs.rmSync(contactsFile(id), { force: true }); } catch {}
   saveDb(); io.to('admin').emit('session_removed', id);
