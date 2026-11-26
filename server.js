@@ -163,8 +163,10 @@ async function startSession(id, { phone } = {}) {
 
   const opts = {
     authStrategy: new LocalAuth({ clientId: id, dataPath: SESSIONS_DIR }),
+    authTimeoutMs: 120000, // WhatsApp Web pode demorar a carregar quando há várias conexões abertas (padrão era 30s)
     puppeteer: {
       headless: true,
+      protocolTimeout: 180000,
       executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
       args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu',
         '--disable-extensions', '--disable-background-networking', '--no-first-run', '--mute-audio'],
