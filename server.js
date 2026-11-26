@@ -220,9 +220,22 @@ async function startSession(id, { phone } = {}) {
     }
   }, CONNECT_TIMEOUT_MS);
 
-  client.initialize().catch((e) => {
+  client.initialize().catch(async (e) => {
     console.error(`[${s.name}] initialize`, e.message);
-    setState(id, { status: 'error', error: 'Não foi possível iniciar o navegador do WhatsApp: ' + e.message.slice(0, 120) });
+    // diagnóstico: o que o navegador estava mostrando quando travou?
+    let diag = '';
+    try {
+      const page = client.pupPage;
+      const browser = client.pupBrowser;
+      const url = page ? page.url() : '?';
+      const title = page ? await page.title() : '?';
+      const text = page ? await page.evaluate(() => (document.body && document.body.innerText || '').replace(/\s+/g, ' ').slice(0, 220)) : '';
+      const ver = browser ? await browser.version() : '?';
+      diag = `url=${url} | titulo=${title} | navegador=${ver} | texto=${text}`;
+      console.error(`[${s.name}] diagnostico: ${diag}`);
+    } catch (err) { console.error(`[${s.name}] diagnostico indisponivel: ${err.message}`); }
+    try { await destroyClient(id); } catch {}
+    setState(id, { status: 'error', error: 'Não foi possível iniciar o navegador do WhatsApp: ' + e.message.slice(0, 100) + (diag ? ' [' + diag.slice(0, 260) + ']' : '') });
   });
 }
 
